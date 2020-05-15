@@ -27,7 +27,8 @@ Use `autoscaler init` to place configuration file `autoscaler.ini` into `/etc/au
 Installation
 ===========
 
-::
+.. code-block:: console
+
     pip3 install aws-autoscaler
 
 
