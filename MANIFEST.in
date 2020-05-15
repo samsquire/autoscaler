@@ -1,0 +1,2 @@
+include aws_autoscaler/autoscaler.ini
+include aws_autoscaler/haproxy.cfg

@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+from functools import reduce
+from argparse import ArgumentParser
+
+parser = ArgumentParser()
+parser.add_argument("command", help="One of init, daemon, add-host")
+parser.add_argument("--host", required=False)
+args = parser.parse_args()
+
+import subprocess
+from subprocess import Popen, PIPE
+import pkg_resources
+from threading import Thread
+
+def parse_process(previous, usage):
+    usage = usage.strip()
+    components = usage.split(" ")
+    previous[components[1]] = float(components[0])
+    return previous
+
+class CPUWatcher(Thread):
+    def __init__(self, handler):
+        super(CPUWatcher, self).__init__()
+        self.handler = handler
+
+    def run(self):
+        watcher = Popen(["bash", "-c", "top -b | grep --color=never --line-buffered \"Cpu\""], stdout=PIPE)
+
+        while True:
+            line = watcher.stdout.readline().decode('utf8').rstrip()
+            cpu_usages = reduce(parse_process, line.replace("%Cpu(s):", "").split(","), {})
+            if cpu_usages["us"] > 50:
+                self.handler.trigger()
+
+import configparser
+
+class Handler():
+    def __init__(self, args):
+        self.args = args
+        self.handling = False
+
+    def trigger(self):
+        if self.handling:
+            return
+        print("CPU threshold reached")
+        print("Scaling up")
+        config = configparser.ConfigParser()
+        config.read("/etc/autoscaler/autoscaler.ini")
+        print(config["machine"]["scale_up_command"])
+        servers = config["haproxy"]["servers"].split(",")
+        print("Waiting for AWS server to come up")
+
+        print("Got new server hostname")
+        for server in servers:
+            print("SSHing onto {} to update HAProxy with hostname".format(server))
+
+        self.handling = True
+
+
+if args.command == "init":
+    subprocess.call(['sudo', 'mkdir', '-p', '/etc/autoscaler'])
+    subprocess.call(['sudo', 'mkdir', '-p', '/etc/autoscaler/hosts.d'])
+    default_ini_writer = Popen(["sudo", "bash", "-c", "! test -f /etc/autoscaler/autoscaler.ini && cat > /etc/autoscaler/autoscaler.ini"], stdin=PIPE)
+    default_ini_writer.stdin.write(pkg_resources.resource_string("aws_autoscaler", "autoscaler.ini"))
+    haproxy_writer = Popen(["sudo", "bash", "-c", "! test -f /etc/autoscaler/haproxy.cfg && cat > /etc/autoscaler/haproxy.cfg"], stdin=PIPE)
+    haproxy_writer.stdin.write(pkg_resources.resource_string("aws_autoscaler", "haproxy.cfg"))
+
+if args.command == "daemon":
+    CPUWatcher(Handler(args)).start()
+
+if args.command == "add-host":
+    config = configparser.ConfigParser()
+    config.read("/etc/autoscaler/autoscaler.ini")
+    default_ini_writer = Popen(["sudo", "bash", "-c", "cat > /etc/autoscaler/hosts.d/{}".format(args.host)], stdin=PIPE)
+    default_ini_writer.stdin.write(config["haproxy"]["server_line"].encode())
