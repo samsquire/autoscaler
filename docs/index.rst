@@ -12,7 +12,7 @@ Autoscaler
 
 Autoscaler is a simple tool to provide reactive scaling to your computer infrastructure at runtime.
 
-Autoscaler watches CPU usage and makes the decision when to scale up. This is opposed to traditional autoscalers which look at clusters at a whole. This is meant to be far simpler than cluster scalers such as Kubernetes.
+Autoscaler watches CPU usage while on a given instance and makes the decision when to scale up. This is opposed to traditional autoscalers which look at clusters at a whole. This is meant to be far simpler than cluster scalers such as Kubernetes.
 
 Configuration
 =================
@@ -22,6 +22,7 @@ Use `autoscaler init` to place configuration file `autoscaler.ini` into `/etc/au
 - Create a machine template file which is is a description of the AMI and machine size to use for scaling up.
 - Place your AWS credentials
 - Place the SSH command to log into HAProxy
+- Place the comma separated list of HAProxy servers
 
 Installation
 ===========
