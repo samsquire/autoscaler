@@ -26,13 +26,17 @@ Use `autoscaler init` to place configuration file `autoscaler.ini` into `/etc/au
 Installation
 ===========
 
+..
+    pip3 install aws-autoscaler
+
+
 Autoscaler needs to be installed on your Haproxy instance and all your machines that you will be scaling up.
 
 HAProxy Configuration
 =====================
 
-``autoscaler add-host <host> <port>`` will write a host entry to ``/etc/autoscaler/hosts.d/``.
-```autoscaler generate`` will generate a HAProxy configuration file based on the hosts inside ``/etc/autoscaler/hosts.d``
+- ``autoscaler add-host <host> <port>`` will write a host entry to ``/etc/autoscaler/hosts.d/``.
+- ``autoscaler generate`` will generate a HAProxy configuration file based on the hosts inside ``/etc/autoscaler/hosts.d``
 
 
 Contribute
