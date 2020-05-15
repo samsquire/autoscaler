@@ -1,27 +1,15 @@
-Template
+Autoscaler
 ========
 
-$project will solve your problem of where to start with documentation,
-by providing a basic explanation of how to do it easily.
+Autoscaler is a tool to provide reactive scaling to your computer infrastructure at runtime.
 
-Look how easy it is to use:
+# Self replicating machines
 
-    import project
-    # Get your stuff done
-    project.do_stuff()
-
-Features
---------
-
-- Be awesome
-- Make things faster
+Autoscaler is the principle that an individual machine can make the decision when to scale up. This is opposed to traditional autoscalers which look at clusters. This is meant to be simpler than cluster scalers such as Kubernetes.
 
 Installation
 ------------
 
-Install $project by running:
-
-    install project
 
 Contribute
 ----------
@@ -29,11 +17,6 @@ Contribute
 - Issue Tracker: github.com/$project/$project/issues
 - Source Code: github.com/$project/$project
 
-Support
--------
-
-If you are having issues, please let us know.
-We have a mailing list located at: project@google-groups.com
 
 License
 -------
