@@ -19,7 +19,7 @@ Configuration
 
 Use `autoscaler init` to place configuration file `autoscaler.ini` into `/etc/autoscaler/autoscaler.ini`
 
-- Create a machine template file which is is a description of the AMI and machine size to use for scaling up.
+- Create an AWS command used for scaling up.
 - Place your AWS credentials
 - Place the SSH command to log into HAProxy
 - Place the comma separated list of HAProxy servers
@@ -27,7 +27,7 @@ Use `autoscaler init` to place configuration file `autoscaler.ini` into `/etc/au
 Installation
 ===========
 
-..
+::
     pip3 install aws-autoscaler
 
 
