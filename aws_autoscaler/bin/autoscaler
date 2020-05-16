@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from functools import reduce
 from argparse import ArgumentParser
+import select
 
 parser = ArgumentParser()
 parser.add_argument("command", help="One of init, daemon, add-host")
@@ -22,26 +23,95 @@ class CPUWatcher(Thread):
     def __init__(self, handler):
         super(CPUWatcher, self).__init__()
         self.handler = handler
+        self.paused = False
+        self.high = False
+
+    def pause(self):
+        self.paused = True
+
+    def unpause(self):
+        self.paused = False
 
     def run(self):
         watcher = Popen(["bash", "-c", "top -b | grep --color=never --line-buffered \"Cpu\""], stdout=PIPE)
 
         while True:
             line = watcher.stdout.readline().decode('utf8').rstrip()
-            cpu_usages = reduce(parse_process, line.replace("%Cpu(s):", "").split(","), {})
-            if cpu_usages["us"] > 50:
-                self.handler.trigger()
+            if not self.paused:
+                cpu_usages = reduce(parse_process, line.replace("%Cpu(s):", "").split(","), {})
+                if cpu_usages["us"] > 50:
+                    self.handler.trigger()
+                    self.high = True
+                if self.high == True and cpu_usages["us"] < 50:
+                    self.handler.resolve()
+                    self.high = False
 
 import configparser
+import socket
+
+class MasterConnection(Thread):
+    def __init__(self):
+        super(MasterConnection, self).__init__()
+        self.packets = []
+
+        HOST = '127.0.0.1'  # The server's hostname or IP address
+        PORT = 65432        # The port used by the server
+
+        self.running = True
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.s.connect((HOST, PORT))
+        self.cpu_watcher = None
+        self.handler = None
+
+    def set_cpu_watcher(self, cpu_watcher):
+        self.cpu_watcher = cpu_watcher
+
+    def set_handler(self, handler):
+        self.handler = handler
+
+    def announce(self, packet):
+        self.s.send((packet + "\n").encode())
+
+    def run(self):
+        while self.running:
+            data = self.s.recv(1024)
+
+            if not data:
+                self.running = False
+            datas = data.decode('utf8').split("\n")
+            for line in datas:
+                if line == "SCALE":
+                    print("Blocking")
+                    self.cpu_watcher.pause()
+                    self.handler.block_scaleup()
+                if line == "FINISH":
+                    self.handler.unblock()
+                    print("Unblocking")
+                    self.cpu_watcher.unpause()
 
 class Handler():
-    def __init__(self, args):
+    def __init__(self, args, master):
         self.args = args
         self.handling = False
+        self.master = master
+        self.blocked = False
+
+    def set_cpu_watcher(self, cpu_watcher):
+        self.cpu_watcher = cpu_watcher
+
+    def block_scaleup(self):
+        self.blocked = True
+
+    def unblock(self):
+        self.blocked = False
 
     def trigger(self):
         if self.handling:
             return
+        if self.blocked:
+            return
+        self.cpu_watcher.pause()
+        self.master.announce("SCALE")
         print("CPU threshold reached")
         print("Scaling up")
         config = configparser.ConfigParser()
@@ -54,8 +124,13 @@ class Handler():
         for server in servers:
             print("SSHing onto {} to update HAProxy with hostname".format(server))
 
+
+        self.cpu_watcher.unpause()
         self.handling = True
 
+    def resolve(self):
+        self.handling = False
+        self.master.announce("FINISH")
 
 if args.command == "init":
     subprocess.call(['sudo', 'mkdir', '-p', '/etc/autoscaler'])
@@ -66,10 +141,76 @@ if args.command == "init":
     haproxy_writer.stdin.write(pkg_resources.resource_string("aws_autoscaler", "haproxy.cfg"))
 
 if args.command == "daemon":
-    CPUWatcher(Handler(args)).start()
+    connection = MasterConnection()
+    handler = Handler(args, connection)
+    cpu_watcher = CPUWatcher(handler)
+
+    connection.set_cpu_watcher(cpu_watcher)
+    connection.set_handler(handler)
+
+    handler.set_cpu_watcher(cpu_watcher)
+
+    connection.start()
+    cpu_watcher.start()
+
+
 
 if args.command == "add-host":
     config = configparser.ConfigParser()
     config.read("/etc/autoscaler/autoscaler.ini")
     default_ini_writer = Popen(["sudo", "bash", "-c", "cat > /etc/autoscaler/hosts.d/{}".format(args.host)], stdin=PIPE)
     default_ini_writer.stdin.write(config["haproxy"]["server_line"].encode())
+
+if args.command == "master":
+    import socket
+
+    HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
+    PORT = 65432        # Port to listen on (non-privileged ports are > 1023)
+    connections = {}
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        s.bind((HOST, PORT))
+
+        s.listen()
+
+        e = select.epoll()
+        e.register(s.fileno(), select.EPOLLIN)
+        running = True
+
+        while running:
+            events = e.poll()
+            for fileno, event in events:
+                if fileno == s.fileno():
+                    conn, addr = s.accept()
+                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                    print('Connection', addr)
+                    conn.setblocking(0)
+                    fd = conn.fileno()
+                    e.register(fd, select.EPOLLIN | select.EPOLLOUT)
+                    connections[fd] = {
+                        "connection": conn,
+                        "fd": fd,
+                        "pending_send": []
+                    }
+                elif event & select.EPOLLIN:
+                    data = connections[fileno]["connection"].recv(1024)
+                    if not data:
+                        connections[fileno]["connection"].close()
+                        e.unregister(fileno)
+                        del connections[fileno]
+                        continue
+                    lines = data.decode('utf8').split("\n")
+                    for data in lines:
+                        if not data: continue
+                        for connection in connections.values():
+                            if connection["fd"] != fileno:
+                                connection["pending_send"].append(data)
+
+                elif event & select.EPOLLOUT:
+                    for data in connections[fileno]["pending_send"]:
+                        print("Sending {} to connection ".format(data, fileno))
+                        connections[fileno]["connection"].sendall(data.encode())
+                    connections[fileno]["pending_send"].clear()
+        e.unregister(args[0])
+        e.close()

@@ -14,6 +14,13 @@ Autoscaler is a simple tool to provide reactive scaling to your computer infrast
 
 Autoscaler watches CPU usage while on a given instance and makes the decision when to scale up. This is opposed to traditional autoscalers which look at clusters at a whole. This is meant to be far simpler than cluster scalers such as Kubernetes.
 
+
+Requirements
+============
+
+* You run one or more HAProxy instances on another machine and you are fine with autoscaler taking over configuration for it.
+* Each Autoscaler node can SSH into the other autoscaler nodes.
+
 Configuration
 =================
 
