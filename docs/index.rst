@@ -18,6 +18,7 @@ Autoscaler watches CPU usage while on a given instance and makes the decision wh
 Requirements
 ============
 
+* You can run ``autoscaler master`` on your load balancing proxies.
 * You run one or more HAProxy instances on another machine and you are fine with autoscaler taking over configuration for it.
 * Each Autoscaler node can SSH into the other autoscaler nodes.
 
@@ -34,12 +35,19 @@ Use `autoscaler init` to place configuration file `autoscaler.ini` into `/etc/au
 Installation
 ===========
 
+Autoscaler needs to be installed on your Haproxy instance and all your machines that you will be scaling up.
+
 .. code-block:: console
 
     pip3 install aws-autoscaler
 
+On your HAProxy instances, run:
 
-Autoscaler needs to be installed on your Haproxy instance and all your machines that you will be scaling up.
+.. code-block:: console
+
+    autoscaler master
+
+Connections to the master from web application servers is handled by SSH remote port forwarding so you don't need to open any firewall rules.
 
 HAProxy Configuration
 =====================
