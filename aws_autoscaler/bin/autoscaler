@@ -162,6 +162,7 @@ if args.command == "add-host":
     default_ini_writer.stdin.write(config["haproxy"]["server_line"].encode())
 
 if args.command == "master":
+    # Inspired by https://gist.github.com/dtoma/564375673b354397efc5
     import socket
 
     HOST = '127.0.0.1'  # Standard loopback interface address (localhost)

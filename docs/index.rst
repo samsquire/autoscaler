@@ -28,14 +28,15 @@ Configuration
 Use `autoscaler init` to place configuration file `autoscaler.ini` into `/etc/autoscaler/autoscaler.ini`
 
 - Create an AWS command used for scaling up.
-- Place your AWS credentials
+- Place your AWS credentials /etc/autoscaler/autoscaler.ini
 - Place the SSH command to log into HAProxy
 - Place the comma separated list of HAProxy servers
+- Update ``/etc/autoscaler/haproxy.cfg``
 
 Installation
 ===========
 
-Autoscaler needs to be installed on your Haproxy instance and all your machines that you will be scaling up.
+Autoscaler needs to be installed on your Haproxy instance and all your application server machines that you will be scaling up.
 
 .. code-block:: console
 
@@ -48,6 +49,14 @@ On your HAProxy instances, run:
     autoscaler master
 
 Connections to the master from web application servers is handled by SSH remote port forwarding so you don't need to open any firewall rules.
+
+On each of your application servers, set up a daemon running the following:
+
+.. code-block:: console
+
+    autoscaler daemon
+
+The daemon will monitor CPU usage and when the CPU threshold (default 50%) is reached, it will spin up another machine.
 
 HAProxy Configuration
 =====================
