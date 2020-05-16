@@ -12,7 +12,7 @@ Autoscaler
 
 Autoscaler is a simple tool to provide reactive scaling to your computer infrastructure at runtime.
 
-Autoscaler watches CPU usage while on a given instance and makes the decision when to scale up. This is opposed to traditional autoscalers which look at clusters at a whole. This is meant to be far simpler than cluster scalers such as Kubernetes.
+Autoscaler watches CPU usage while on a given instance and makes the decision when to scale up. It talks to itself with a simple text based protocol. This is opposed to traditional autoscalers which look at clusters at a whole. This is meant to be far simpler than cluster scalers such as Kubernetes.
 
 
 Requirements
