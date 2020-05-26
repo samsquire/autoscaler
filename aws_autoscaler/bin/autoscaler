@@ -48,14 +48,15 @@ class CPUWatcher(Thread):
 
 import configparser
 import socket
+import json
 
 class MasterConnection(Thread):
-    def __init__(self):
+    def __init__(self, port):
         super(MasterConnection, self).__init__()
         self.packets = []
 
         HOST = '127.0.0.1'  # The server's hostname or IP address
-        PORT = 65432        # The port used by the server
+        PORT = port        # The port used by the server
 
         self.running = True
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -89,6 +90,8 @@ class MasterConnection(Thread):
                     print("Unblocking")
                     self.cpu_watcher.unpause()
 
+import json
+
 class Handler():
     def __init__(self, args, master):
         self.args = args
@@ -116,14 +119,26 @@ class Handler():
         print("Scaling up")
         config = configparser.ConfigParser()
         config.read("/etc/autoscaler/autoscaler.ini")
-        print(config["machine"]["scale_up_command"])
-        servers = config["haproxy"]["servers"].split(",")
-        print("Waiting for AWS server to come up")
+        scale_up_command = config["machine"]["scale_up_command"]
+        print(scale_up_command)
+        scale_process = Popen(scale_up_command.split(" "), stdout=PIPE,
+                env={"AWS_SECRET_ACCESS_KEY": config["aws"]["aws_secret_key"],
+                    "AWS_ACCESS_KEY_ID": config["aws"]["aws_access_key"],
+                    "AWS_DEFAULT_REGION": config["aws"]["aws_default_region"]})
+        stdout, stderr = scale_process.communicate()
+        decoded = stdout.decode('utf8')
+        spun_up_server_data = json.loads(decoded)
 
+        print(spun_up_server_data)
+
+        print("Waiting for AWS server to come up")
+        servers = config["haproxy"]["servers"].split(",")
         print("Got new server hostname")
         for server in servers:
             print("SSHing onto {} to update HAProxy with hostname".format(server))
-
+            ssh_command = ["ssh", config["haproxy"]["ssh_user"] + "@" + server]
+            ssh_command += config["haproxy"]["ssh_params"].split(" ")
+            print(ssh_command)
 
         self.cpu_watcher.unpause()
         self.handling = True
@@ -141,7 +156,29 @@ if args.command == "init":
     haproxy_writer.stdin.write(pkg_resources.resource_string("aws_autoscaler", "haproxy.cfg"))
 
 if args.command == "daemon":
-    connection = MasterConnection()
+    config = configparser.ConfigParser()
+    config.read("/etc/autoscaler/autoscaler.ini")
+    # Connect to haproxy nodes
+    print("Creating tunnel to HAProxy nodes")
+    servers = config["haproxy"]["servers"].split(",")
+
+    check_command = Popen(["bash", "-c", "pgrep -laf ssh | grep localhost:65432 | grep -v bash"], stdout=PIPE)
+    tunnels, stderr = check_command.communicate()
+    active_tunnels = tunnels.decode('utf8').split("\n")
+    active_tunnels.pop()
+    print(active_tunnels)
+    if len(active_tunnels) == 0:
+        print("There are no active tunnels, creating one...")
+        for server, port in zip(servers, range(65430, 65432)):
+            print("SSHing onto {} to create tunnel".format(server))
+            ssh_command = ["ssh", "-o", "StrictHostKeyChecking=no", "-f", "-N", "-L", str(port) + ":localhost:65432", config["haproxy"]["ssh_user"] + "@" + server]
+            ssh_command += config["haproxy"]["ssh_params"].split(" ")
+            tunnel = Popen(ssh_command)
+            tunnel.communicate()
+    else:
+        print("There is a tunnel active")
+
+    connection = MasterConnection(65430)
     handler = Handler(args, connection)
     cpu_watcher = CPUWatcher(handler)
 
@@ -153,13 +190,29 @@ if args.command == "daemon":
     connection.start()
     cpu_watcher.start()
 
+import os
 
+if args.command == "generate":
+    data = open("/etc/autoscaler/haproxy.cfg").read() 
+    hosts = os.listdir("/etc/autoscaler/hosts.d/")
+    replacement_lines = ""
+    for host in hosts:
+        replacement_lines += open(os.path.join("/etc/autoscaler/hosts.d/", host)).read()
+    data = data.replace("$SERVERS", replacement_lines) 
+    print(data)
+
+import socket
 
 if args.command == "add-host":
     config = configparser.ConfigParser()
     config.read("/etc/autoscaler/autoscaler.ini")
-    default_ini_writer = Popen(["sudo", "bash", "-c", "cat > /etc/autoscaler/hosts.d/{}".format(args.host)], stdin=PIPE)
-    default_ini_writer.stdin.write(config["haproxy"]["server_line"].encode())
+    current_hosts = os.listdir("/etc/autoscaler/hosts.d/")
+    current_total = len(current_hosts)
+    new_name = "server" + str(current_total + 1)
+    default_ini_writer = Popen(["sudo", "bash", "-c", "cat > /etc/autoscaler/hosts.d/{}".format(new_name)], stdin=PIPE)
+    line = config["haproxy"]["server_line"].replace("$NAME", new_name)
+    line = line.replace("$IP", socket.gethostbyname(args.host))
+    default_ini_writer.stdin.write(line.encode())
 
 if args.command == "master":
     # Inspired by https://gist.github.com/dtoma/564375673b354397efc5
